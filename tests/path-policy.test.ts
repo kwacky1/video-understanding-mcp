@@ -6,7 +6,10 @@ import { mkdtemp } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import { rm } from "node:fs/promises";
 
-import { validateInputPath } from "../src/path-policy.js";
+import {
+  validateInputPath,
+  validateOutputDirectory,
+} from "../src/path-policy.js";
 
 const tempPaths: string[] = [];
 
@@ -49,6 +52,44 @@ describe("validateInputPath", () => {
 
     await expect(validateInputPath(file, [root], 100)).rejects.toMatchObject({
       code: "PATH_OUTSIDE_ALLOWED_ROOTS",
+    });
+  });
+
+  describe("validateOutputDirectory", () => {
+    it("accepts a directory inside a writable root", async () => {
+      const root = await makeTempDir("vu-output-root-");
+      const output = join(root, "transcripts");
+      await mkdir(output);
+
+      await expect(validateOutputDirectory(output, [root])).resolves.toBe(
+        await realpath(output),
+      );
+    });
+
+    it("rejects relative output directories", async () => {
+      await expect(
+        validateOutputDirectory("transcripts", ["/tmp"]),
+      ).rejects.toMatchObject({ code: "RELATIVE_PATH" });
+    });
+
+    it("rejects output directories outside writable roots", async () => {
+      const root = await makeTempDir("vu-output-root-");
+      const outside = await makeTempDir("vu-output-outside-");
+
+      await expect(
+        validateOutputDirectory(outside, [root]),
+      ).rejects.toMatchObject({ code: "PATH_OUTSIDE_ALLOWED_ROOTS" });
+    });
+
+    it("rejects symlinked output directories that escape writable roots", async () => {
+      const root = await makeTempDir("vu-output-root-");
+      const outside = await makeTempDir("vu-output-outside-");
+      const link = join(root, "linked-output");
+      await symlink(outside, link);
+
+      await expect(
+        validateOutputDirectory(link, [root]),
+      ).rejects.toMatchObject({ code: "PATH_OUTSIDE_ALLOWED_ROOTS" });
     });
   });
 

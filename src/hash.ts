@@ -34,3 +34,7 @@ export async function sha256File(
 
   return hash.digest("hex");
 }
+
+export function sha256Text(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}

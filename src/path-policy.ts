@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { realpath, stat } from "node:fs/promises";
+import { access, realpath, stat } from "node:fs/promises";
+import { constants } from "node:fs";
 import { isAbsolute, relative } from "node:path";
 
 import { VideoUnderstandingError } from "./errors.js";
@@ -13,6 +14,18 @@ export interface ValidatedInput {
 function isWithinRoot(target: string, root: string): boolean {
   const relation = relative(root, target);
   return relation === "" || (!relation.startsWith("..") && !isAbsolute(relation));
+}
+
+async function resolveRoots(allowedRoots: string[]): Promise<string[]> {
+  try {
+    return await Promise.all(allowedRoots.map((root) => realpath(root)));
+  } catch (error) {
+    throw new VideoUnderstandingError(
+      "INVALID_ROOT_CONFIG",
+      "Every configured filesystem root must exist",
+      { cause: error },
+    );
+  }
 }
 
 export async function validateInputPath(
@@ -46,16 +59,7 @@ export async function validateInputPath(
     );
   }
 
-  let resolvedRoots: string[];
-  try {
-    resolvedRoots = await Promise.all(allowedRoots.map((root) => realpath(root)));
-  } catch (error) {
-    throw new VideoUnderstandingError(
-      "INVALID_ROOT_CONFIG",
-      "Every configured readable root must exist",
-      { cause: error },
-    );
-  }
+  const resolvedRoots = await resolveRoots(allowedRoots);
 
   if (!resolvedRoots.some((root) => isWithinRoot(resolvedPath, root))) {
     throw new VideoUnderstandingError(
@@ -85,4 +89,62 @@ export async function validateInputPath(
     sizeBytes: inputStat.size,
     pathHash: createHash("sha256").update(resolvedPath).digest("hex"),
   };
+}
+
+export async function validateOutputDirectory(
+  outputDirectory: string,
+  allowedRoots: string[],
+): Promise<string> {
+  if (outputDirectory.includes("\0")) {
+    throw new VideoUnderstandingError(
+      "INVALID_PATH",
+      "Output directory must not contain NUL bytes",
+    );
+  }
+
+  if (!isAbsolute(outputDirectory)) {
+    throw new VideoUnderstandingError(
+      "RELATIVE_PATH",
+      "Output directory must be absolute",
+    );
+  }
+
+  let resolvedDirectory: string;
+  try {
+    resolvedDirectory = await realpath(outputDirectory);
+  } catch (error) {
+    throw new VideoUnderstandingError(
+      "OUTPUT_DIRECTORY_NOT_FOUND",
+      "Output directory does not exist",
+      { cause: error },
+    );
+  }
+
+  const resolvedRoots = await resolveRoots(allowedRoots);
+  if (!resolvedRoots.some((root) => isWithinRoot(resolvedDirectory, root))) {
+    throw new VideoUnderstandingError(
+      "PATH_OUTSIDE_ALLOWED_ROOTS",
+      "Output directory resolves outside the configured writable roots",
+    );
+  }
+
+  const outputStat = await stat(resolvedDirectory);
+  if (!outputStat.isDirectory()) {
+    throw new VideoUnderstandingError(
+      "NOT_A_DIRECTORY",
+      "Output directory must resolve to a directory",
+    );
+  }
+
+  try {
+    await access(resolvedDirectory, constants.W_OK);
+  } catch (error) {
+    throw new VideoUnderstandingError(
+      "OUTPUT_DIRECTORY_NOT_WRITABLE",
+      "Output directory is not writable",
+      { cause: error },
+    );
+  }
+
+  return resolvedDirectory;
 }

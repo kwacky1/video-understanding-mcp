@@ -3,10 +3,12 @@ import { delimiter, isAbsolute, join, resolve } from "node:path";
 
 export interface AppConfig {
   allowedReadRoots: string[];
+  allowedWriteRoots: string[];
   maxInputBytes: number;
   ffprobePath: string;
   ffmpegPath: string;
   whisperPath: string;
+  whisperModelPath: string | undefined;
   cacheDir: string;
 }
 
@@ -33,14 +35,35 @@ export function loadConfig(
     }
   }
 
+  const allowedReadRoots = (
+    configuredRoots?.length ? configuredRoots : [cwd]
+  ).map((root) => resolve(root));
+  const configuredWriteRoots = env.VU_ALLOWED_WRITE_ROOTS?.split(delimiter)
+    .map((root) => root.trim())
+    .filter(Boolean);
+
+  for (const root of configuredWriteRoots ?? []) {
+    if (!isAbsolute(root)) {
+      throw new Error("VU_ALLOWED_WRITE_ROOTS entries must be absolute paths");
+    }
+  }
+
+  if (env.VU_WHISPER_MODEL_PATH && !isAbsolute(env.VU_WHISPER_MODEL_PATH)) {
+    throw new Error("VU_WHISPER_MODEL_PATH must be an absolute path");
+  }
+
   return {
-    allowedReadRoots: (configuredRoots?.length ? configuredRoots : [cwd]).map(
-      (root) => resolve(root),
-    ),
+    allowedReadRoots,
+    allowedWriteRoots: (
+      configuredWriteRoots?.length ? configuredWriteRoots : allowedReadRoots
+    ).map((root) => resolve(root)),
     maxInputBytes,
     ffprobePath: env.VU_FFPROBE_PATH ?? "ffprobe",
     ffmpegPath: env.VU_FFMPEG_PATH ?? "ffmpeg",
     whisperPath: env.VU_WHISPER_PATH ?? "whisper-cli",
+    whisperModelPath: env.VU_WHISPER_MODEL_PATH
+      ? resolve(env.VU_WHISPER_MODEL_PATH)
+      : undefined,
     cacheDir:
       env.VU_CACHE_DIR ??
       (process.platform === "darwin"
