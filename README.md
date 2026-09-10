@@ -2,6 +2,9 @@
 
 Local stdio MCP server for extracting bounded, reproducible evidence from video.
 
+> Early development: Milestone 1 provides safe video inspection. Local
+> transcription and timestamped frame extraction are planned next.
+
 Milestone 1 provides:
 
 - `video_probe`, backed by `ffprobe`
@@ -22,6 +25,8 @@ Milestone 1 provides:
 ## Build and run
 
 ```bash
+git clone https://github.com/kwacky1/video-understanding-mcp.git
+cd video-understanding-mcp
 npm install
 npm run build
 VU_ALLOWED_READ_ROOTS="$HOME/Videos" npm start
@@ -51,3 +56,7 @@ npm run doctor -- --json
 The doctor exits non-zero until all three executables are ready. Whisper is
 reported now so Milestone 2 prerequisites are visible before transcription is
 added.
+
+## Licence
+
+[MIT](LICENSE)

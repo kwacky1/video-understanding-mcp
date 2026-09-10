@@ -4,6 +4,16 @@
   "private": true,
   "type": "module",
   "description": "Local MCP server for bounded, provenance-aware video understanding.",
+  "license": "MIT",
+  "author": "Simon Giesemann",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kwacky1/video-understanding-mcp.git"
+  },
+  "homepage": "https://github.com/kwacky1/video-understanding-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/kwacky1/video-understanding-mcp/issues"
+  },
   "bin": {
     "video-understanding-mcp": "./dist/server.js",
     "vu-doctor": "./dist/doctor.js",
