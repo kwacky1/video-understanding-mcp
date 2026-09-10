@@ -26,7 +26,8 @@
     "test:watch": "vitest",
     "start": "node dist/server.js",
     "doctor": "node dist/doctor.js",
-    "generate:fixture": "node dist/generate-fixture.js"
+    "generate:fixture": "node dist/generate-fixture.js",
+    "bootstrap:model": "sh scripts/bootstrap-whisper-model.sh"
   },
   "engines": {
     "node": ">=22"

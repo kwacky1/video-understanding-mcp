@@ -21,6 +21,30 @@ describe("loadConfig", () => {
       resolve("/tmp/one"),
       resolve("/tmp/two"),
     ]);
+    expect(config.allowedWriteRoots).toEqual([
+      resolve("/tmp/one"),
+      resolve("/tmp/two"),
+    ]);
+  });
+
+  it("loads separate writable roots and a model path", () => {
+    const config = loadConfig(
+      {
+        VU_ALLOWED_WRITE_ROOTS: ["/tmp/output-one", "/tmp/output-two"].join(
+          delimiter,
+        ),
+        VU_WHISPER_MODEL_PATH: "/tmp/models/whisper.bin",
+      },
+      "/tmp/project",
+    );
+
+    expect(config.allowedWriteRoots).toEqual([
+      resolve("/tmp/output-one"),
+      resolve("/tmp/output-two"),
+    ]);
+    expect(config.whisperModelPath).toBe(
+      resolve("/tmp/models/whisper.bin"),
+    );
   });
 
   it("rejects an invalid maximum input size", () => {
@@ -33,6 +57,18 @@ describe("loadConfig", () => {
     expect(() =>
       loadConfig({ VU_ALLOWED_READ_ROOTS: `videos${delimiter}/tmp/videos` }),
     ).toThrow("VU_ALLOWED_READ_ROOTS entries must be absolute paths");
+  });
+
+  it("rejects relative writable roots", () => {
+    expect(() =>
+      loadConfig({ VU_ALLOWED_WRITE_ROOTS: `output${delimiter}/tmp/output` }),
+    ).toThrow("VU_ALLOWED_WRITE_ROOTS entries must be absolute paths");
+  });
+
+  it("rejects a relative model path", () => {
+    expect(() =>
+      loadConfig({ VU_WHISPER_MODEL_PATH: "models/whisper.bin" }),
+    ).toThrow("VU_WHISPER_MODEL_PATH must be an absolute path");
   });
 });
 

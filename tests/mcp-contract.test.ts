@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -17,11 +17,30 @@ describe("MCP stdio contract", () => {
   let client: Client;
   let transport: StdioClientTransport;
   let stderr = "";
+  let outputDir: string;
 
   beforeAll(async () => {
     root = await mkdtemp(join(tmpdir(), "vu-contract-"));
     fixturePath = join(root, "fixture.mp4");
     await generateFixture(fixturePath);
+    outputDir = join(root, "output");
+    const modelPath = join(root, "ggml-contract-test.bin");
+    const whisperPath = join(root, "fake-whisper.sh");
+    await mkdir(outputDir);
+    await writeFile(modelPath, "contract model");
+    await writeFile(
+      whisperPath,
+      `#!/bin/sh
+prefix=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-of" ]; then prefix="$2"; shift 2; else shift; fi
+done
+cat > "\${prefix}.json" <<'JSON'
+{"result":{"language":"en"},"transcription":[{"offsets":{"from":0,"to":2000},"text":"Synthetic fixture transcript."}]}
+JSON
+`,
+    );
+    await chmod(whisperPath, 0o755);
 
     transport = new StdioClientTransport({
       command: process.execPath,
@@ -30,7 +49,10 @@ describe("MCP stdio contract", () => {
       env: {
         ...getDefaultEnvironment(),
         VU_ALLOWED_READ_ROOTS: root,
+        VU_ALLOWED_WRITE_ROOTS: root,
         VU_CACHE_DIR: join(root, "cache"),
+        VU_WHISPER_PATH: whisperPath,
+        VU_WHISPER_MODEL_PATH: modelPath,
       },
       stderr: "pipe",
     });
@@ -49,9 +71,12 @@ describe("MCP stdio contract", () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  it("lists a deterministic video_probe tool", async () => {
+  it("lists deterministic video tools", async () => {
     const result = await client.listTools();
-    expect(result.tools.map((tool) => tool.name)).toEqual(["video_probe"]);
+    expect(result.tools.map((tool) => tool.name)).toEqual([
+      "video_probe",
+      "video_transcribe",
+    ]);
     expect(result.tools[0]?.outputSchema).toMatchObject({
       type: "object",
       properties: {
@@ -59,6 +84,48 @@ describe("MCP stdio contract", () => {
         input_sha256: expect.any(Object),
       },
     });
+  });
+
+  it("writes timestamped transcript JSON and Markdown", async () => {
+    const result = await client.callTool({
+      name: "video_transcribe",
+      arguments: {
+        path: fixturePath,
+        output_dir: outputDir,
+        language: "en",
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      schema_version: "1.0",
+      duration_ms: 2000,
+      language: "en",
+      cache_hit: false,
+      segments: [
+        {
+          id: 0,
+          start_ms: 0,
+          end_ms: 2000,
+          text: "Synthetic fixture transcript.",
+        },
+      ],
+      transcript_json_path: expect.stringMatching(/\.json$/),
+      transcript_markdown_path: expect.stringMatching(/\.md$/),
+    });
+  });
+
+  it("uses the content-addressed transcript cache", async () => {
+    const result = await client.callTool({
+      name: "video_transcribe",
+      arguments: {
+        path: fixturePath,
+        output_dir: outputDir,
+        language: "en",
+      },
+    });
+
+    expect(result.structuredContent).toMatchObject({ cache_hit: true });
   });
 
   it("probes a generated audio-video fixture", async () => {

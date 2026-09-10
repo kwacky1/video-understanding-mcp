@@ -9,6 +9,7 @@ import { errorMessage } from "./errors.js";
 import { VideoUnderstandingError } from "./errors.js";
 import { stderrLogger } from "./logger.js";
 import { probeVideo } from "./probe.js";
+import { transcribeVideo } from "./transcribe.js";
 
 export function createServer() {
   const config = loadConfig();
@@ -39,6 +40,75 @@ export function createServer() {
     async ({ path }, extra) => {
       try {
         const result = await probeVideo(path, config, extra.signal);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          structuredContent: result,
+        };
+      } catch (error) {
+        const payload = {
+          code:
+            error instanceof VideoUnderstandingError
+              ? error.code
+              : "UNEXPECTED_ERROR",
+          message: errorMessage(error),
+        };
+        return {
+          content: [{ type: "text", text: JSON.stringify(payload) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.registerTool(
+    "video_transcribe",
+    {
+      title: "Transcribe local video",
+      description:
+        "Transcribe the first audio stream of a local media file with whisper.cpp. Processing is offline and writes timestamped JSON and Markdown into an allowed output directory.",
+      inputSchema: {
+        path: z.string().describe("Absolute path to a local media file"),
+        output_dir: z
+          .string()
+          .describe(
+            "Existing absolute directory for durable transcript files; the server does not create it",
+          ),
+        language: z
+          .string()
+          .default("en")
+          .describe("Whisper language code, or auto for detection"),
+      },
+      outputSchema: {
+        schema_version: z.literal("1.0"),
+        input_sha256: z.string(),
+        engine: z.object({
+          name: z.literal("whisper.cpp"),
+          model: z.string(),
+          model_sha256: z.string(),
+        }),
+        language: z.string(),
+        duration_ms: z.number(),
+        segments: z.array(
+          z.object({
+            id: z.number(),
+            start_ms: z.number(),
+            end_ms: z.number(),
+            text: z.string(),
+          }),
+        ),
+        transcript_json_path: z.string(),
+        transcript_markdown_path: z.string(),
+        cache_hit: z.boolean(),
+      },
+    },
+    async ({ path, output_dir, language }, extra) => {
+      try {
+        const result = await transcribeVideo(
+          path,
+          { outputDir: output_dir, language },
+          config,
+          extra.signal,
+        );
         return {
           content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
           structuredContent: result,
