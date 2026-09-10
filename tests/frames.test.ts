@@ -172,9 +172,51 @@ describe("extractFrames", () => {
       },
       config,
     );
+    const [frameCacheKey] = await readdir(join(root, "cache", "frames-v1"));
+    const cacheProvenancePath = join(
+      root,
+      "cache",
+      "frames-v1",
+      frameCacheKey!,
+      "provenance.json",
+    );
+    const mismatchedProvenance = JSON.parse(
+      await readFile(cacheProvenancePath, "utf8"),
+    ) as {
+      input_sha256: string;
+      source_time_base: string;
+      parameters: {
+        interval_seconds: number;
+        scene_threshold: number;
+        max_frames: number;
+      };
+    };
+    mismatchedProvenance.input_sha256 = "mismatched-input";
+    mismatchedProvenance.source_time_base = "1/1";
+    mismatchedProvenance.parameters.interval_seconds = 999;
+    await writeFile(
+      cacheProvenancePath,
+      `${JSON.stringify(mismatchedProvenance, null, 2)}\n`,
+    );
+    const recovered = await extractFrames(
+      inputPath,
+      {
+        outputDir,
+        intervalSeconds: 10,
+        sceneThreshold: 0.2,
+        maxFrames: 24,
+      },
+      config,
+    );
 
     expect(first.result.cache_hit).toBe(false);
     expect(second.result.cache_hit).toBe(true);
+    expect(recovered.result).toMatchObject({
+      cache_hit: false,
+      input_sha256: first.result.input_sha256,
+      source_time_base: first.result.source_time_base,
+      parameters: first.result.parameters,
+    });
     expect(first.result.frames[0]?.reason).toContain("first_frame");
     const sceneFrame = first.result.frames.find((frame) =>
       frame.reason.includes("scene_change"),

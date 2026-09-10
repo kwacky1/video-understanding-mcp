@@ -205,7 +205,11 @@ export async function extractFrames(
   const cacheDocumentPath = join(cacheDirectory, "provenance.json");
   await enforceCachePolicy(config, [cacheDirectory]);
 
-  let document = await readCachedFrames(cacheDocumentPath, cacheDirectory);
+  let document = await readCachedFrames(cacheDocumentPath, cacheDirectory, {
+    inputSha256: probe.input_sha256,
+    parameters,
+    sourceTimeBase,
+  });
   let cacheHit = document !== undefined;
   if (!document) {
     await rm(cacheDirectory, { recursive: true, force: true });
@@ -724,6 +728,11 @@ function parseShowinfoTimestamps(
 async function readCachedFrames(
   documentPath: string,
   cacheDirectory: string,
+  expected: {
+    inputSha256: string;
+    parameters: VideoExtractFramesResult["parameters"];
+    sourceTimeBase: string;
+  },
 ): Promise<CachedFrameDocument | undefined> {
   try {
     const parsed = JSON.parse(
@@ -732,7 +741,11 @@ async function readCachedFrames(
     if (
       parsed.schema_version !== "1.0" ||
       parsed.sampler !== "time_and_scene" ||
-      !Array.isArray(parsed.frames)
+      !Array.isArray(parsed.frames) ||
+      !parsed.parameters ||
+      parsed.input_sha256 !== expected.inputSha256 ||
+      parsed.source_time_base !== expected.sourceTimeBase ||
+      canonicalJson(parsed.parameters) !== canonicalJson(expected.parameters)
     ) {
       return undefined;
     }
