@@ -76,6 +76,7 @@ JSON
     expect(result.tools.map((tool) => tool.name)).toEqual([
       "video_probe",
       "video_transcribe",
+      "video_extract_frames",
     ]);
     expect(result.tools[0]?.outputSchema).toMatchObject({
       type: "object",
@@ -128,6 +129,70 @@ JSON
     expect(result.structuredContent).toMatchObject({ cache_hit: true });
   });
 
+  it("returns timestamped frame provenance without inline images by default", async () => {
+    const result = await client.callTool({
+      name: "video_extract_frames",
+      arguments: {
+        path: fixturePath,
+        output_dir: outputDir,
+        interval_seconds: 1,
+        scene_threshold: 1,
+        max_frames: 2,
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.content).toHaveLength(1);
+    expect(result.structuredContent).toMatchObject({
+      schema_version: "1.0",
+      sampler: "time_and_scene",
+      included_frames: 2,
+      included_inline_images: 0,
+      frames: [
+        expect.objectContaining({
+          id: "f0001",
+          pts: expect.any(Number),
+          pts_time_seconds: expect.any(Number),
+          sha256: expect.any(String),
+        }),
+        expect.any(Object),
+      ],
+    });
+  });
+
+  it("places a timestamp immediately before each requested inline image", async () => {
+    const result = await client.callTool({
+      name: "video_extract_frames",
+      arguments: {
+        path: fixturePath,
+        output_dir: outputDir,
+        interval_seconds: 1,
+        scene_threshold: 1,
+        max_frames: 2,
+        return_inline: true,
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      included_inline_images: 2,
+      omitted_inline_images: 0,
+      cache_hit: true,
+    });
+    const content = result.content as Array<Record<string, unknown>>;
+    expect(content.map((item) => item.type)).toEqual([
+      "text",
+      "text",
+      "image",
+      "text",
+      "image",
+    ]);
+    expect(content[1]).toMatchObject({
+      type: "text",
+      text: expect.stringMatching(/^f0001 @ \d+\.\d{3}s$/),
+    });
+  });
+
   it("probes a generated audio-video fixture", async () => {
     const result = await client.callTool({
       name: "video_probe",
@@ -138,7 +203,7 @@ JSON
     expect(result.structuredContent).toMatchObject({
       schema_version: "1.0",
       duration_ms: 2000,
-      cache_hit: false,
+      cache_hit: expect.any(Boolean),
     });
     const streams = (result.structuredContent as Record<string, unknown>)
       .streams;

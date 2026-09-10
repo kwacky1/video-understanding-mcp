@@ -10,9 +10,13 @@ export interface AppConfig {
   whisperPath: string;
   whisperModelPath: string | undefined;
   cacheDir: string;
+  cacheMaxAgeMs: number;
+  cacheMaxBytes: number;
 }
 
 const DEFAULT_MAX_INPUT_BYTES = 10 * 1024 * 1024 * 1024;
+const DEFAULT_CACHE_MAX_AGE_DAYS = 14;
+const DEFAULT_CACHE_MAX_BYTES = 5 * 1024 * 1024 * 1024;
 
 export function loadConfig(
   env: NodeJS.ProcessEnv = process.env,
@@ -24,9 +28,21 @@ export function loadConfig(
   const maxInputBytes = Number(
     env.VU_MAX_INPUT_BYTES ?? DEFAULT_MAX_INPUT_BYTES,
   );
+  const cacheMaxAgeDays = Number(
+    env.VU_CACHE_MAX_AGE_DAYS ?? DEFAULT_CACHE_MAX_AGE_DAYS,
+  );
+  const cacheMaxBytes = Number(
+    env.VU_CACHE_MAX_BYTES ?? DEFAULT_CACHE_MAX_BYTES,
+  );
 
   if (!Number.isSafeInteger(maxInputBytes) || maxInputBytes <= 0) {
     throw new Error("VU_MAX_INPUT_BYTES must be a positive integer");
+  }
+  if (!Number.isFinite(cacheMaxAgeDays) || cacheMaxAgeDays <= 0) {
+    throw new Error("VU_CACHE_MAX_AGE_DAYS must be greater than zero");
+  }
+  if (!Number.isSafeInteger(cacheMaxBytes) || cacheMaxBytes <= 0) {
+    throw new Error("VU_CACHE_MAX_BYTES must be a positive integer");
   }
 
   for (const root of configuredRoots ?? []) {
@@ -69,6 +85,8 @@ export function loadConfig(
       (process.platform === "darwin"
         ? join(homedir(), "Library", "Caches", "video-understanding-mcp")
         : join(env.XDG_CACHE_HOME ?? join(homedir(), ".cache"), "video-understanding-mcp")),
+    cacheMaxAgeMs: cacheMaxAgeDays * 24 * 60 * 60 * 1000,
+    cacheMaxBytes,
   };
 }
 

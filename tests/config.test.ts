@@ -45,6 +45,8 @@ describe("loadConfig", () => {
     expect(config.whisperModelPath).toBe(
       resolve("/tmp/models/whisper.bin"),
     );
+    expect(config.cacheMaxAgeMs).toBe(14 * 24 * 60 * 60 * 1000);
+    expect(config.cacheMaxBytes).toBe(5 * 1024 * 1024 * 1024);
   });
 
   it("rejects an invalid maximum input size", () => {
@@ -69,6 +71,15 @@ describe("loadConfig", () => {
     expect(() =>
       loadConfig({ VU_WHISPER_MODEL_PATH: "models/whisper.bin" }),
     ).toThrow("VU_WHISPER_MODEL_PATH must be an absolute path");
+  });
+
+  it("validates cache retention settings", () => {
+    expect(() => loadConfig({ VU_CACHE_MAX_AGE_DAYS: "0" })).toThrow(
+      "VU_CACHE_MAX_AGE_DAYS must be greater than zero",
+    );
+    expect(() => loadConfig({ VU_CACHE_MAX_BYTES: "unlimited" })).toThrow(
+      "VU_CACHE_MAX_BYTES must be a positive integer",
+    );
   });
 });
 
