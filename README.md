@@ -2,18 +2,19 @@
 
 Local stdio MCP server for extracting bounded, reproducible evidence from video.
 
-> Early development: Milestones 1 and 2 provide safe video inspection and
-> offline transcription. Timestamped frame extraction is planned next.
+> Early development: Milestones 1 through 3 provide safe video inspection,
+> offline transcription, and timestamp-accurate visual evidence extraction.
 
 The server provides:
 
 - `video_probe`, backed by `ffprobe`
 - `video_transcribe`, backed by FFmpeg and whisper.cpp
+- `video_extract_frames`, with source-PTS scene and cadence sampling
 - timestamped transcript JSON and Markdown written to caller-selected roots
 - absolute-path and allowed-root enforcement
 - symlink-escape protection
 - bounded, cancellable subprocess execution
-- content-addressed probe and transcript caching
+- content-addressed probe, transcript, and frame caching with retention limits
 - `vu-doctor` readiness checks for FFmpeg, FFprobe, and whisper.cpp
 - synthetic media fixtures and MCP stdio contract tests
 
@@ -77,6 +78,8 @@ Optional configuration:
 | `VU_WHISPER_PATH` | `whisper-cli` | whisper.cpp executable |
 | `VU_WHISPER_MODEL_PATH` | none | Absolute path to a local GGML model |
 | `VU_CACHE_DIR` | platform cache directory | Content-addressed cache root |
+| `VU_CACHE_MAX_AGE_DAYS` | `14` | Maximum cache entry age |
+| `VU_CACHE_MAX_BYTES` | `5368709120` | Maximum total cache size with LRU eviction |
 
 Both root variables are path-delimited lists (`:` on macOS/Linux, `;` on
 Windows). Output directories must already exist, resolve inside a configured
@@ -104,6 +107,35 @@ canonical parameters, whisper executable fingerprint, and model SHA-256.
 Repeating the same call reuses cached transcript artefacts and returns
 `cache_hit: true`; changing the input, language, model, or executable
 configuration invalidates the cache.
+
+## Timestamped frame extraction
+
+`video_extract_frames` accepts:
+
+```json
+{
+  "path": "/absolute/path/demo.mp4",
+  "output_dir": "/absolute/path/evidence",
+  "interval_seconds": 10,
+  "scene_threshold": 0.4,
+  "max_frames": 24,
+  "return_inline": false
+}
+```
+
+The sampler combines the first frame, source-time cadence, scene changes, and
+FFmpeg `mpdecimate` near-duplicate removal. It never uses the timestamp-
+rewriting `fps` filter. The server records every selected frame's source PTS,
+timebase, duration, selection reason, and SHA-256 in a durable
+`provenance.json` file.
+
+`max_frames` cannot exceed 24. Inline images are disabled by default; when
+requested, no more than four JPEG thumbnails are returned and their longest
+edge is at most 512 pixels. Full extracted frames remain in the durable output
+directory.
+
+All cache stages are pruned to the configured age and total-size limits. Recent
+cache hits update the entry timestamp used for least-recently-used eviction.
 
 ## Doctor
 

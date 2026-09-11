@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import type { AppConfig } from "./config.js";
+import { enforceCachePolicy, touchCacheEntry } from "./cache.js";
 import { VideoUnderstandingError } from "./errors.js";
 import { sha256File } from "./hash.js";
 import { validateInputPath } from "./path-policy.js";
@@ -101,6 +102,7 @@ export async function probeVideo(
   );
   const inputSha256 = await sha256File(validated.path, signal);
   const cachePath = join(config.cacheDir, "probe-v1", inputSha256, "ffprobe.json");
+  await enforceCachePolicy(config, [dirname(cachePath)]);
   let raw: RawProbe;
   let cacheHit = false;
 
@@ -114,6 +116,7 @@ export async function probeVideo(
       return normaliseProbe(raw, inputSha256, false);
     }
     cacheHit = true;
+    await touchCacheEntry(dirname(cachePath));
   } catch (error) {
     if (
       !(error instanceof Error) ||

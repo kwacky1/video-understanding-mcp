@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import {
-  access,
   copyFile,
   mkdir,
   mkdtemp,
@@ -10,20 +9,18 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { constants } from "node:fs";
 import {
   basename,
-  delimiter,
   dirname,
   extname,
-  isAbsolute,
   join,
-  resolve,
 } from "node:path";
 import { tmpdir } from "node:os";
 
 import type { AppConfig } from "./config.js";
+import { enforceCachePolicy, touchCacheEntry } from "./cache.js";
 import { VideoUnderstandingError } from "./errors.js";
+import { executableFingerprint } from "./executable.js";
 import { sha256File, sha256Text } from "./hash.js";
 import {
   validateInputPath,
@@ -227,6 +224,7 @@ export async function transcribeVideo(
     ].join("\n"),
   );
   const cacheDirectory = join(config.cacheDir, TRANSCRIPT_STAGE, cacheKey);
+  await enforceCachePolicy(config, [cacheDirectory]);
   const cachedJsonPath = join(cacheDirectory, "transcript.json");
   const cachedMarkdownPath = join(cacheDirectory, "transcript.md");
 
@@ -252,6 +250,8 @@ export async function transcribeVideo(
       transcriptMarkdown(document),
     );
     cacheHit = false;
+  } else {
+    await touchCacheEntry(cacheDirectory);
   }
 
   const stem = basename(validatedInput.path, extname(validatedInput.path));
@@ -262,6 +262,7 @@ export async function transcribeVideo(
     atomicCopy(cachedJsonPath, transcriptJsonPath),
     atomicCopy(cachedMarkdownPath, transcriptMarkdownPath),
   ]);
+  await enforceCachePolicy(config, [cacheDirectory]);
 
   return {
     ...document,
@@ -269,47 +270,6 @@ export async function transcribeVideo(
     transcript_markdown_path: transcriptMarkdownPath,
     cache_hit: cacheHit,
   };
-}
-
-async function executableFingerprint(
-  executable: string,
-  signal?: AbortSignal,
-): Promise<string> {
-  const resolvedExecutable = await resolveExecutable(executable);
-  return sha256File(resolvedExecutable, signal);
-}
-
-async function resolveExecutable(executable: string): Promise<string> {
-  if (
-    isAbsolute(executable) ||
-    executable.includes("/") ||
-    executable.includes("\\")
-  ) {
-    return resolve(executable);
-  }
-
-  const extensions =
-    process.platform === "win32"
-      ? (process.env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM").split(";")
-      : [""];
-
-  for (const directory of (process.env.PATH ?? "").split(delimiter)) {
-    if (!directory) continue;
-    for (const extension of extensions) {
-      const candidate = join(directory, `${executable}${extension}`);
-      try {
-        await access(candidate, constants.X_OK);
-        return candidate;
-      } catch {
-        // Try the next PATH candidate.
-      }
-    }
-  }
-
-  throw new VideoUnderstandingError(
-    "EXECUTABLE_NOT_FOUND",
-    `Could not resolve ${executable} from PATH`,
-  );
 }
 
 async function validateModel(path: string): Promise<void> {

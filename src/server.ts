@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import type { ContentBlock } from "@modelcontextprotocol/sdk/types.js";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
 
@@ -8,6 +9,7 @@ import { loadConfig } from "./config.js";
 import { errorMessage } from "./errors.js";
 import { VideoUnderstandingError } from "./errors.js";
 import { stderrLogger } from "./logger.js";
+import { extractFrames } from "./frames.js";
 import { probeVideo } from "./probe.js";
 import { transcribeVideo } from "./transcribe.js";
 
@@ -111,6 +113,129 @@ export function createServer() {
         );
         return {
           content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          structuredContent: result,
+        };
+      } catch (error) {
+        const payload = {
+          code:
+            error instanceof VideoUnderstandingError
+              ? error.code
+              : "UNEXPECTED_ERROR",
+          message: errorMessage(error),
+        };
+        return {
+          content: [{ type: "text", text: JSON.stringify(payload) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.registerTool(
+    "video_extract_frames",
+    {
+      title: "Extract timestamped video frames",
+      description:
+        "Extract bounded visual evidence using source-time cadence, scene changes, and near-duplicate removal. Writes JPEG frames and provenance into an allowed output directory.",
+      inputSchema: {
+        path: z.string().describe("Absolute path to a local media file"),
+        output_dir: z
+          .string()
+          .describe(
+            "Existing absolute directory for durable frame files; the server creates a content-addressed child directory",
+          ),
+        interval_seconds: z.number().positive().default(10),
+        scene_threshold: z.number().min(0).max(1).default(0.4),
+        max_frames: z.number().int().min(1).max(24).default(24),
+        return_inline: z.boolean().default(false),
+      },
+      outputSchema: {
+        schema_version: z.literal("1.0"),
+        input_sha256: z.string(),
+        sampler: z.literal("time_and_scene"),
+        parameters: z.object({
+          interval_seconds: z.number(),
+          scene_threshold: z.number(),
+          max_frames: z.number(),
+        }),
+        source_time_base: z.string(),
+        frames: z.array(
+          z.object({
+            id: z.string(),
+            path: z.string(),
+            pts: z.number(),
+            pts_time_seconds: z.number(),
+            duration_seconds: z.number(),
+            coverage_start_ms: z.number(),
+            coverage_end_ms: z.number(),
+            reason: z.array(
+              z.enum(["first_frame", "cadence", "scene_change"]),
+            ),
+            scene_score: z.number().nullable(),
+            sha256: z.string(),
+          }),
+        ),
+        provenance_path: z.string(),
+        included_frames: z.number(),
+        omitted_frames: z.number(),
+        included_inline_images: z.number(),
+        omitted_inline_images: z.number(),
+        cache_hit: z.boolean(),
+      },
+    },
+    async (
+      {
+        path,
+        output_dir,
+        interval_seconds,
+        scene_threshold,
+        max_frames,
+        return_inline,
+      },
+      extra,
+    ) => {
+      try {
+        const { result, inlineFrames } = await extractFrames(
+          path,
+          {
+            outputDir: output_dir,
+            intervalSeconds: interval_seconds,
+            sceneThreshold: scene_threshold,
+            maxFrames: max_frames,
+            returnInline: return_inline,
+          },
+          config,
+          extra.signal,
+        );
+        const content: ContentBlock[] = [
+          {
+            type: "text" as const,
+            text: [
+              `Extracted ${result.included_frames} frames; omitted ${result.omitted_frames}.`,
+              `Provenance: ${result.provenance_path}`,
+              ...result.frames.map(
+                (frame) =>
+                  `${frame.id} ${frame.pts_time_seconds.toFixed(3)}s ${frame.path}`,
+              ),
+            ].join("\n"),
+          },
+        ];
+        for (const inlineFrame of inlineFrames) {
+          const metadata = result.frames.find(
+            (frame) => frame.id === inlineFrame.frameId,
+          )!;
+          content.push({
+            type: "text",
+            text: `${metadata.id} @ ${metadata.pts_time_seconds.toFixed(3)}s`,
+          });
+          content.push({
+            type: "image",
+            data: inlineFrame.data,
+            mimeType: inlineFrame.mimeType,
+          });
+        }
+        return {
+          content,
           structuredContent: result,
         };
       } catch (error) {
