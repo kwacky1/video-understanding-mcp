@@ -84,7 +84,13 @@ export function loadConfig(
       env.VU_CACHE_DIR ??
       (process.platform === "darwin"
         ? join(homedir(), "Library", "Caches", "video-understanding-mcp")
-        : join(env.XDG_CACHE_HOME ?? join(homedir(), ".cache"), "video-understanding-mcp")),
+        : process.platform === "win32"
+          ? join(
+              env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"),
+              "video-understanding-mcp",
+              "Cache",
+            )
+          : join(env.XDG_CACHE_HOME ?? join(homedir(), ".cache"), "video-understanding-mcp")),
     cacheMaxAgeMs: cacheMaxAgeDays * 24 * 60 * 60 * 1000,
     cacheMaxBytes,
   };
@@ -95,7 +101,16 @@ export function minimalChildEnv(
 ): NodeJS.ProcessEnv {
   const childEnv: NodeJS.ProcessEnv = {};
 
-  for (const key of ["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "SYSTEMROOT"]) {
+  for (const key of [
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "LANG",
+    "LC_ALL",
+    "SYSTEMROOT",
+    "TEMP",
+    "TMP",
+  ]) {
     if (env[key] !== undefined) {
       childEnv[key] = env[key];
     }

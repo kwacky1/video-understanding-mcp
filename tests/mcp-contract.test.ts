@@ -87,7 +87,8 @@ JSON
     });
   });
 
-  it("writes timestamped transcript JSON and Markdown", async () => {
+  // The fake whisper tool is a POSIX shell script.
+  it.skipIf(process.platform === "win32")("writes timestamped transcript JSON and Markdown", async () => {
     const result = await client.callTool({
       name: "video_transcribe",
       arguments: {
@@ -116,7 +117,7 @@ JSON
     });
   });
 
-  it("uses the content-addressed transcript cache", async () => {
+  it.skipIf(process.platform === "win32")("uses the content-addressed transcript cache", async () => {
     const result = await client.callTool({
       name: "video_transcribe",
       arguments: {

@@ -9,6 +9,7 @@ interface DoctorCheck {
   name: string;
   executable: string;
   ready: boolean;
+  required: boolean;
   version?: string;
   error?: string;
 }
@@ -17,6 +18,7 @@ async function checkExecutable(
   name: string,
   executable: string,
   args: string[],
+  required = true,
 ): Promise<DoctorCheck> {
   try {
     const result = await runCommand(executable, args, {
@@ -29,10 +31,17 @@ async function checkExecutable(
       name,
       executable,
       ready: true,
+      required,
       version: output.split(/\r?\n/, 1)[0] || "available",
     };
   } catch (error) {
-    return { name, executable, ready: false, error: errorMessage(error) };
+    return {
+      name,
+      executable,
+      ready: false,
+      required,
+      error: errorMessage(error),
+    };
   }
 }
 
@@ -41,7 +50,7 @@ export async function runDoctor(): Promise<DoctorCheck[]> {
   return Promise.all([
     checkExecutable("ffmpeg", config.ffmpegPath, ["-version"]),
     checkExecutable("ffprobe", config.ffprobePath, ["-version"]),
-    checkExecutable("whisper.cpp", config.whisperPath, ["--help"]),
+    checkExecutable("whisper.cpp", config.whisperPath, ["--help"], false),
   ]);
 }
 
@@ -54,13 +63,16 @@ async function main(): Promise<void> {
   } else {
     for (const check of checks) {
       const detail = check.ready ? check.version : check.error;
-      process.stdout.write(
-        `${check.ready ? "READY" : "MISSING"} ${check.name}: ${detail}\n`,
-      );
+      const status = check.ready
+        ? "READY"
+        : check.required
+          ? "MISSING"
+          : "OPTIONAL";
+      process.stdout.write(`${status} ${check.name}: ${detail}\n`);
     }
   }
 
-  if (checks.some((check) => !check.ready)) {
+  if (checks.some((check) => check.required && !check.ready)) {
     process.exitCode = 1;
   }
 }

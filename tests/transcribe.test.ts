@@ -77,7 +77,8 @@ describe("whisper transcript normalisation", () => {
 });
 
 describe("transcribeVideo", () => {
-  it("writes timestamped JSON and Markdown and reuses the cache", async () => {
+  // The fake ffmpeg and whisper tools are POSIX shell scripts.
+  it.skipIf(process.platform === "win32")("writes timestamped JSON and Markdown and reuses the cache", async () => {
     const root = await mkdtemp(join(tmpdir(), "vu-transcribe-"));
     tempPaths.push(root);
     const inputPath = join(root, "demo.mp4");
