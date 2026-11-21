@@ -23,8 +23,8 @@ The server provides:
 - Node.js 22 or newer
 - `ffmpeg`
 - `ffprobe`
-- `whisper-cli`
-- a local whisper.cpp GGML model
+- `whisper-cli` and a local whisper.cpp GGML model (optional; only needed for
+  `video_transcribe`)
 
 ### Install whisper.cpp and bootstrap a model
 
@@ -77,13 +77,80 @@ Optional configuration:
 | `VU_FFMPEG_PATH` | `ffmpeg` | FFmpeg executable |
 | `VU_WHISPER_PATH` | `whisper-cli` | whisper.cpp executable |
 | `VU_WHISPER_MODEL_PATH` | none | Absolute path to a local GGML model |
-| `VU_CACHE_DIR` | platform cache directory | Content-addressed cache root |
+| `VU_CACHE_DIR` | platform cache directory | Content-addressed cache root (`~/Library/Caches` on macOS, `%LOCALAPPDATA%\video-understanding-mcp\Cache` on Windows, `$XDG_CACHE_HOME` or `~/.cache` elsewhere) |
 | `VU_CACHE_MAX_AGE_DAYS` | `14` | Maximum cache entry age |
 | `VU_CACHE_MAX_BYTES` | `5368709120` | Maximum total cache size with LRU eviction |
 
 Both root variables are path-delimited lists (`:` on macOS/Linux, `;` on
 Windows). Output directories must already exist, resolve inside a configured
 writable root, and be writable.
+
+## Windows setup
+
+The server runs natively on Windows 10/11 without WSL. Frame extraction and
+probing only need FFmpeg; transcription is optional.
+
+1. Install Node.js 22 or newer and FFmpeg (which includes `ffprobe`):
+
+   ```powershell
+   winget install --id OpenJS.NodeJS.LTS -e
+   winget install --id Gyan.FFmpeg -e
+   ```
+
+   winget adds `ffmpeg.exe` and `ffprobe.exe` to
+   `%LOCALAPPDATA%\Microsoft\WinGet\Links`. Open a new terminal so the updated
+   `PATH` is picked up.
+
+2. Build and check readiness:
+
+   ```powershell
+   git clone https://github.com/kwacky1/video-understanding-mcp.git
+   cd video-understanding-mcp
+   npm install
+   npm run build
+   npm run doctor
+   ```
+
+   `whisper.cpp` is reported as `OPTIONAL` when it is not installed; the
+   doctor only fails when FFmpeg or FFprobe are missing. The
+   `bootstrap:model` script needs a POSIX shell, so skip it on Windows unless
+   you are using Git Bash or WSL.
+
+3. Optionally generate a short synthetic clip to confirm frame extraction:
+
+   ```powershell
+   node dist\generate-fixture.js "$env:USERPROFILE\Videos\vu-fixture.mp4"
+   ```
+
+### Copilot CLI configuration on Windows
+
+Add the server to `%USERPROFILE%\.copilot\mcp-config.json`. Use absolute
+paths, escape backslashes in JSON, and point the FFmpeg variables at the
+executables so the server does not depend on the MCP host's `PATH`:
+
+```json
+{
+  "mcpServers": {
+    "video-understanding": {
+      "type": "local",
+      "command": "node",
+      "args": ["C:\\Users\\you\\video-understanding-mcp\\dist\\server.js"],
+      "env": {
+        "VU_ALLOWED_READ_ROOTS": "C:\\Users\\you\\Videos",
+        "VU_ALLOWED_WRITE_ROOTS": "C:\\Users\\you\\Videos\\frames",
+        "VU_FFMPEG_PATH": "C:\\Users\\you\\AppData\\Local\\Microsoft\\WinGet\\Links\\ffmpeg.exe",
+        "VU_FFPROBE_PATH": "C:\\Users\\you\\AppData\\Local\\Microsoft\\WinGet\\Links\\ffprobe.exe"
+      },
+      "tools": ["*"]
+    }
+  }
+}
+```
+
+If you manage Node with nvm-windows and the active version is older than 22,
+set `command` to the absolute path of a newer `node.exe` instead of `node`.
+Create the writable output directory before calling `video_extract_frames`.
+Separate multiple roots with `;`.
 
 ## Transcription
 
@@ -144,9 +211,9 @@ npm run doctor
 npm run doctor -- --json
 ```
 
-The doctor exits non-zero until all three executables are ready. Whisper is
-reported now so Milestone 2 prerequisites are visible before transcription is
-added.
+The doctor exits non-zero when FFmpeg or FFprobe is not ready. whisper.cpp is
+optional: when it is missing the doctor reports it as `OPTIONAL` and still
+exits zero, and only `video_transcribe` is unavailable.
 
 ## Licence
 

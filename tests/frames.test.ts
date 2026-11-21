@@ -9,7 +9,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -376,10 +376,7 @@ describe("extractFrames", () => {
       root,
     );
     const first = await extractFrames(inputPath, { outputDir }, config);
-    const durableDirectory = first.result.provenance_path.replace(
-      /\/provenance\.json$/,
-      "",
-    );
+    const durableDirectory = dirname(first.result.provenance_path);
     await rm(durableDirectory, { recursive: true });
     await symlink(escapeDir, durableDirectory);
 
@@ -389,7 +386,8 @@ describe("extractFrames", () => {
     expect(await readdir(escapeDir)).toEqual([]);
   }, 30_000);
 
-  it("removes extraction scratch data when cancelled", async () => {
+  // The fake ffmpeg is a POSIX shell script, which Windows cannot spawn without a shell.
+  it.skipIf(process.platform === "win32")("removes extraction scratch data when cancelled", async () => {
     const root = await mkdtemp(join(tmpdir(), "vu-frames-cancel-"));
     tempPaths.push(root);
     const inputPath = join(root, "fixture.mkv");
